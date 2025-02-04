@@ -50,6 +50,8 @@ void update_relax(Circle &circle, const int32_t audio_time)
 {
     static double keydown_time = 0.0;
     static double keyup_delay = 0.0;
+    static double last_hit_time = 0.0;
+    static double bpm_estimate = 180.0; // Default fallback BPM
 
     if (cfg_relax_lock)
     {
@@ -66,11 +68,33 @@ void update_relax(Circle &circle, const int32_t audio_time)
         {
             if (!circle.clicked)
             {
-                if (cfg_relax_style == 'a')
-                    current_click = current_click == left_click[0] ? right_click[0] : left_click[0];
+                // Estimate BPM from hit object timing
+                if (last_hit_time > 0)
+                {
+                    double delta_time = (circle.start_time - last_hit_time) / 1000.0; // Convert ms to sec
+                    if (delta_time > 0)
+                    {
+                        bpm_estimate = 60.0 / delta_time; 
+                    }
+                }
+                last_hit_time = circle.start_time;
+
+                // Determine if we should alternate
+                bool is_fast_section = bpm_estimate >= 250; // Adjust threshold as needed
+
+                if (is_fast_section)
+                {
+                    // Alternate keys on fast parts
+                    current_click = (current_click == left_click[0]) ? right_click[0] : left_click[0];
+                }
+                else
+                {
+                    // Single tap on slow parts
+                    current_click = left_click[0];
+                }
 
                 send_keyboard_input(current_click, 0);
-                FR_INFO("Relax hit %d!, %d %d", current_beatmap.hit_object_idx, circle.start_time, circle.end_time);
+                FR_INFO("Relax hit %d!, %d %d, BPM: %.1f", current_beatmap.hit_object_idx, circle.start_time, circle.end_time, bpm_estimate);
                 keyup_delay = circle.end_time ? circle.end_time - circle.start_time : 0.5;
 
                 if (cfg_timewarp_enabled)
@@ -90,12 +114,6 @@ void update_relax(Circle &circle, const int32_t audio_time)
                 od_check_ms = .0f;
             }
         }
-    }
-    if (cfg_relax_lock && keydown_time && ((ImGui::GetTime() - keydown_time) * 1000.0 > keyup_delay))
-    {
-        keydown_time = 0.0;
-        send_keyboard_input(current_click, KEYEVENTF_KEYUP);
-    }
 }
 
 void relax_on_beatmap_load()
